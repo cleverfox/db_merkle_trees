@@ -27,7 +27,7 @@
 %% @see //stdlib/gb_trees
 %% @see //crypto/crypto:hash/2
 
--module(gb_merkle_trees).
+-module(db_merkle_trees).
 -export([balance/1,
          delete/2,
          empty/0,

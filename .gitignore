@@ -7,3 +7,5 @@ erl_crash.dump
 ebin/
 doc/
 *.d
+rebar.lock
+_build

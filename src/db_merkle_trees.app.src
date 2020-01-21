@@ -1,0 +1,5 @@
+{application, db_merkle_trees,
+ [
+  {description, "Database backed merkle trees"},
+  {vsn, "0.1"}
+ ]}.
