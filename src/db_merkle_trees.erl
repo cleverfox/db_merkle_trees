@@ -30,19 +30,19 @@
 -module(db_merkle_trees).
 -export([
          balance/1,
-%         delete/3,
+         delete/2,
          empty/0,
          enter/3,
          foldr/3,
 %         from_list/1,
 %         from_orddict/1,
 %         from_orddict/2,
-%         keys/1,
+         keys/1,
          lookup/2,
 %         merkle_proof/3,
-%         root_hash/2,
-         size/1
-%         to_orddict/1,
+         root_hash/1,
+         size/1,
+         to_orddict/1
 %         verify_merkle_proof/4
          ]).
 
@@ -78,31 +78,62 @@
               tree/0,
               merkle_proof/0]).
 
-%-spec delete(key(), tree(), any()) -> tree().
-%% @doc Remove key from tree. The key must be present in the tree.
-%delete(Key, {Size, RootNode}, {DBH, Acc}) ->
-%    {Size - 1, delete_1(Key, RootNode, {DBH, Acc})}.
-%
-%-spec delete_1(key(), tree_node(), any()) -> tree_node().
-%delete_1(Key, {Key, _, _}, {DBH, Acc}) ->
-%    empty;
-%delete_1(Key, {InnerKey, _, LeftNode, RightNode}, {DBH, Acc}) ->
-%    case Key < InnerKey of
-%        true ->
-%            case delete_1(Key, LeftNode, {DBH, Acc}) of
-%                empty ->
-%                    RightNode;
-%                NewLeftNode ->
-%                    {InnerKey, inner_hash(node_hash(NewLeftNode, {DBH, Acc}), node_hash(RightNode, {DBH, Acc})), NewLeftNode, RightNode}
-%            end;
-%        _ ->
-%            case delete_1(Key, RightNode, {DBH, Acc}) of
-%                empty ->
-%                    LeftNode;
-%                NewRightNode ->
-%                    {InnerKey, inner_hash(node_hash(LeftNode, {DBH, Acc}), node_hash(NewRightNode, {DBH, Acc})), LeftNode, NewRightNode}
-%            end
-%    end.
+-spec delete(key(), any()) -> tree().
+delete(Key, {DBH, Acc}) ->
+  {{Size,RootID}, Acc1}=DBH(get,<<"R">>,Acc),
+  {{S1,NewRootID},Acc2}=delete(Key, {Size, RootID}, {DBH, Acc1}),
+  DBH(put,{<<"R">>,{S1,NewRootID}},Acc2).
+
+-spec delete(key(), tree(), any()) -> tree().
+% @doc Remove key from tree. The key must be present in the tree.
+delete(Key, {Size, RootID}, {DBH, Acc}) ->
+  {Node,_}=DBH(get,RootID,Acc),
+  {NewRootID,Acc1}=delete_1(Key, Node, {DBH, Acc}),
+  {{Size - 1, NewRootID}, Acc1}.
+
+-spec delete_1(key(), tree_node(), any()) -> tree_node().
+delete_1(Key, {Key, _, _}, {DBH, Acc}) ->
+  Acc1=DBH(del,<<"L",Key/binary>>,Acc),
+  {empty, Acc1};
+delete_1(Key, {InnerKey, _, LeftNodeID, RightNodeID}, {DBH, Acc0}) ->
+  Acc=DBH(del,<<"N",InnerKey/binary>>,Acc0),
+  case Key < InnerKey of
+    true ->
+      {LeftNode,_}=DBH(get,LeftNodeID,Acc),
+      case delete_1(Key, LeftNode, {DBH, Acc}) of
+        {empty,Acc1} ->
+          {RightNodeID,Acc1};
+        {NewLeftNodeID,Acc1} ->
+          NewNID= <<"N",InnerKey/binary>>,
+          LeftH=node_hash(NewLeftNodeID, {DBH, Acc1}),
+          RightH=node_hash(RightNodeID, {DBH, Acc1}),
+          IH=inner_hash(LeftH,
+                        RightH,
+                        {DBH, Acc1}
+                       ),
+          NewInnerNode= {InnerKey, IH ,
+                         NewLeftNodeID, RightNodeID},
+          Acc2=DBH(put, {NewNID, NewInnerNode}, DBH(del, Key, Acc1)),
+          {NewNID,Acc2}
+      end;
+    _ ->
+      {RightNode,_}=DBH(get,RightNodeID,Acc),
+      case delete_1(Key, RightNode, {DBH, Acc}) of
+        {empty,Acc1} ->
+          {LeftNodeID,Acc1};
+        {NewRightNodeID, Acc1} ->
+          NewNID= <<"N",InnerKey/binary>>,
+          IH=inner_hash(node_hash(LeftNodeID, {DBH, Acc1}), 
+                        node_hash(NewRightNodeID, {DBH, Acc1}),
+                        {DBH, Acc1}
+                       ),
+          NewInnerNode= {InnerKey, 
+                         IH, 
+                         LeftNodeID, NewRightNodeID},
+          Acc2=DBH(put, {NewNID, NewInnerNode}, Acc1),
+          {NewNID,Acc2}
+      end
+  end.
 
 -spec empty() -> tree().
 %% @doc Return an empty tree.
@@ -124,11 +155,12 @@ leaf_hash(Key, Value) ->
 inner_hash(LeftHash, RightHash, _) ->
   ?HASH(<<LeftHash/binary, RightHash/binary>>).
 
-%-spec root_hash(tree(), any()) -> hash() | undefined.
-%%% @doc Return the hash of root node.
-%root_hash({_, RootNode}, {DBH, Acc}) ->
-%    node_hash(RootNode, {DBH,Acc}).
-%
+-spec root_hash(any()) -> hash() | undefined.
+%% @doc Return the hash of root node.
+root_hash({DBH, DBAcc}) ->
+  {{_Size,RootID},_Acc1}=DBH(get,<<"R">>,DBAcc),
+  node_hash(RootID, {DBH,DBAcc}).
+
 %-spec merkle_proof(key(), tree(), any()) -> merkle_proof().
 %%% @doc For a given key return a proof that, along with its value, it is contained in tree.
 %%% Hash for root node is not included in the proof.
@@ -192,24 +224,29 @@ inner_hash(LeftHash, RightHash, _) ->
 %from_orddict(OrdDict, Size, {DBH, Acc}) ->
 %    {Size, balance_orddict(OrdDict, Size, {DBH, Acc})}.
 %
-%-spec to_orddict(tree()) -> list({key(), value()}).
-%%% @doc Convert tree to an orddict.
-%to_orddict(Tree) ->
-%    foldr(
-%      fun (KV, Acc) ->
-%              [KV|Acc]
-%      end,
-%      [],
-%      Tree).
-%
-%-spec keys(tree()) -> list(key()).
-%%% @doc Return the keys as an ordered list.
-%keys(Tree) ->
-%    foldr(
-%      fun ({Key, _}, Acc) -> [Key|Acc] end,
-%      [],
-%      Tree).
-%
+-spec to_orddict(tree()) -> list({key(), value()}).
+%% @doc Convert tree to an orddict.
+to_orddict({DBH,Acc}) ->
+  foldr(
+    fun({K,V},A) ->
+        [{K,V}|A]
+    end,[],{DBH,Acc}).
+
+ %   foldr(
+ %     fun (KV, A) ->
+ %             [KV|A]
+ %     end,
+ %     [],
+ %     {DBH,Acc}).
+
+-spec keys(any()) -> list(key()).
+%% @doc Return the keys as an ordered list.
+keys({DBH,Acc}) ->
+  foldr(
+      fun ({Key, _}, A) -> [Key|A] end,
+      [],
+      {DBH,Acc}).
+
 %-spec foldr(fun(({key(), value()}, Acc :: any(), {fun(atom(),any(),any()), any()} ) -> any()), Acc :: any(), tree()) -> Acc :: any().
 %% @doc Iterate through keys and values, from those with highest keys to lowest.
 foldr(Fun, Acc, {DBH, DBAcc}) ->
@@ -225,7 +262,6 @@ foldr_1(F, Acc, <<"L",_/binary>>=LeafID, {DBH, DBAcc}) ->
   F({Key, Value}, Acc);
 foldr_1(F, Acc, <<"N",_/binary>>=NodeID, {DBH, DBAcc}) ->
   {{_, _, Left, Right},_Acc1}=DBH(get,NodeID,DBAcc),
-  %io:format("N ~p R ~p L ~p~n",[NodeID,Right,Left]),
   foldr_1(F, foldr_1(F, Acc, Right, {DBH, DBAcc}), Left, {DBH, DBAcc}).
 
 -spec node_hash(tree_node(), any()) -> hash() | undefined.
@@ -362,7 +398,6 @@ enter_1(Key, Value, <<"N",_/binary>>=InnerNode, Depth, TreeSize, {DBH, Acc}) ->
             case may_be_rebalanced(Count, NewHeight) of
               true ->
                 {BalancedTopNode, Acc5}=balance_node(NewNID, Count, {DBH, Acc4}),
-                %io:format("~nBal ~p~n~n",[BalancedTopNode]),
                 {node_id(BalancedTopNode),
                  undefined,
                  undefined,
@@ -406,10 +441,7 @@ balance_orddict_1(OrdDict, Size, {DBH, Acc}) when Size > 1 ->
   Size2 = Size div 2,
   Size1 = Size - Size2,
   BOD1=balance_orddict_1(OrdDict, Size1, {DBH, Acc}),
-  %io:format("S ~p ~p ~p ~w~n",[Size,Size1,Size2,length(OrdDict)]),
-  %io:format("BOD1 ~p ~p~n",[Size1, BOD1]),
   {{LeftNode, OrdDict1=[{Key, _} | _]}, Acc1} = BOD1,
-  %io:format("Key ~p~n",[Key]),
   {{RightNode, OrdDict2}, Acc2} = balance_orddict_1(OrdDict1, Size2, {DBH, Acc1}),
   InnerHash=inner_hash(
               node_hash(LeftNode, {DBH, Acc2}), 
@@ -437,7 +469,7 @@ balance_node(Node, Size, DBH) ->
 balance({DBH, DBAcc}) ->
   {{Size, RootNode}, _} = DBH(get,<<"R">>, DBAcc),
   {NewRoot,Acc1}=balance_orddict(node_to_orddict(RootNode, {DBH, DBAcc}), Size, {DBH, DBAcc}),
-  DBH(put,{<<"R">>,NewRoot},Acc1).
+  DBH(put,{<<"R">>,{Size,node_id(NewRoot)}},Acc1).
 
 
 -spec lookup(key(), tree()) -> value() | none.
@@ -490,7 +522,7 @@ bottom_merkle_proof_pair({_Hash, Pair}) when is_tuple(Pair) ->
     bottom_merkle_proof_pair(Pair);
 bottom_merkle_proof_pair(Pair) ->
     Pair.
-
+
 -ifdef(TEST).
 empty_test_() ->
     [?_assertEqual(0, ?MODULE:size(empty()))].
