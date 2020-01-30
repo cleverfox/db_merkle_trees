@@ -9,3 +9,4 @@ doc/
 *.d
 rebar.lock
 _build
+*~

@@ -17,13 +17,12 @@ testFun(Action, Arg, _Acc) ->
 run() ->
   Fun=fun testFun/3,
   M=db_merkle_trees:balance(
-    {fun db_tree_test:testFun/3,
-     lists:foldl(
-       fun(K,A) ->
-           db_merkle_trees:enter(<<(K+$a)>>,<<K>>,{Fun,A})
-       end, #{<<"R">> => db_merkle_trees:empty() },
-       lists:seq(0,8)
-      )}),
+      {Fun,
+       db_merkle_trees:from_list(
+         [ {<<($a+N)>>,<<N>>} || N <- lists:seq(0,8) ],
+         Fun
+        )
+      }),
   {_,Root}=maps:get(<<"R">>,M),
   %RootNode=maps:get(Root,M),
   M1=db_merkle_trees:delete(<<"a">>,{fun db_tree_test:testFun/3, M}),
@@ -36,12 +35,16 @@ run() ->
 %   % end,[],{fun db_tree_test:testFun/3, M}),
 %   db_merkle_trees:keys({fun db_tree_test:testFun/3, M1})
 %   }.
-  io:format("M ~p~n",[db_merkle_trees:root_hash({fun db_tree_test:testFun/3,M})]),
-  io:format("M2 ~p~n",[db_merkle_trees:root_hash({fun db_tree_test:testFun/3,M2})]),
   RootNode=maps:get(Root,M2),
   % display_tree(0,RootNode,M),
   display_tree(0,RootNode,M2),
-  M2.
+  MR=db_merkle_trees:root_hash({fun db_tree_test:testFun/3,M2}),
+  MP=db_merkle_trees:merkle_proof(<<"i">>,{fun db_tree_test:testFun/3,M2}),
+  ok=db_merkle_trees:verify_merkle_proof(<<"i">>,<<8>>,MR,MP),
+  MR=<<242,75,174,24,20,49,52,251,
+       102,115,1,33,222,39,247,200,
+       205,39,38,219,108,166,228,137,
+       239,110,215,75,134,8,52,95>>.
 
 display_tree(Depth, {Key,V,H}, _Acc) ->
   PadSize="~"++integer_to_list(Depth*2)++"s",
