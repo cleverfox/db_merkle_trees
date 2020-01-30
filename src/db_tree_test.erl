@@ -39,8 +39,9 @@ run() ->
   io:format("M ~p~n",[db_merkle_trees:root_hash({fun db_tree_test:testFun/3,M})]),
   io:format("M2 ~p~n",[db_merkle_trees:root_hash({fun db_tree_test:testFun/3,M2})]),
   RootNode=maps:get(Root,M2),
-  display_tree(0,RootNode,M),
-  display_tree(0,RootNode,M2).
+  % display_tree(0,RootNode,M),
+  display_tree(0,RootNode,M2),
+  M2.
 
 display_tree(Depth, {Key,V,H}, _Acc) ->
   PadSize="~"++integer_to_list(Depth*2)++"s",

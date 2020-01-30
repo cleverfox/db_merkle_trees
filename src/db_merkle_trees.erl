@@ -34,16 +34,16 @@
          empty/0,
          enter/3,
          foldr/3,
-%         from_list/1,
+         from_list/2,
 %         from_orddict/1,
 %         from_orddict/2,
          keys/1,
          lookup/2,
-%         merkle_proof/3,
+         merkle_proof/2,
          root_hash/1,
          size/1,
-         to_orddict/1
-%         verify_merkle_proof/4
+         to_orddict/1,
+         verify_merkle_proof/4
          ]).
 
 -ifdef(TEST).
@@ -161,59 +161,72 @@ root_hash({DBH, DBAcc}) ->
   {{_Size,RootID},_Acc1}=DBH(get,<<"R">>,DBAcc),
   node_hash(RootID, {DBH,DBAcc}).
 
-%-spec merkle_proof(key(), tree(), any()) -> merkle_proof().
-%%% @doc For a given key return a proof that, along with its value, it is contained in tree.
-%%% Hash for root node is not included in the proof.
-%merkle_proof(Key, {_Size, RootNode}, {DBH, Acc}) ->
-%    merkle_proof_node(Key, RootNode, {DBH, Acc}).
-%
-%-spec merkle_proof_node(key(), tree_node(), any()) -> merkle_proof().
-%merkle_proof_node(Key, {Key, Value, _}, {DBH, Acc}) ->
-%    {?HASH(Key), ?HASH(Value)};
-%merkle_proof_node(Key, {InnerKey, _, Left, Right}, {DBH, Acc}) ->
-%    case Key < InnerKey of
-%        true ->
-%            {merkle_proof_node(Key, Left, {DBH, Acc}), node_hash(Right, {DBH, Acc})};
-%        _ ->
-%            {node_hash(Left, {DBH, Acc}), merkle_proof_node(Key, Right, {DBH, Acc})}
-%    end.
-%
-%-spec verify_merkle_proof(key(), value(), Root::hash(), merkle_proof()) ->
-%                                 ok | {error, Reason} when
-%      Reason :: {key_hash_mismatch, hash()}
-%              | {value_hash_mismatch, hash()}
-%              | {root_hash_mismatch, hash()}.
-%%% @doc Verify a proof against a leaf and a root node hash.
-%verify_merkle_proof(Key, Value, RootHash, Proof) ->
-%    {KH, VH} = {?HASH(Key), ?HASH(Value)},
-%    {PKH, PVH} = bottom_merkle_proof_pair(Proof),
-%    if
-%        PKH =/= KH ->
-%            {error, {key_hash_mismatch, PKH}};
-%        PVH =/= VH ->
-%            {error, {value_hash_mismatch, PKH}};
-%        true ->
-%            PRH = merkle_fold(Proof),
-%            if
-%                PRH =/= RootHash ->
-%                    {error, {root_hash_mismatch, PRH}};
-%                true ->
-%                    ok
-%            end
-%    end.
-%
-%-spec from_list(list({key(), value()})) -> tree().
-%%% @doc Create a tree from a list.
-%%% This creates a tree by iteratively inserting elements and not necessarily results in a perfect balance, like the one obtained when running {@link from_orddict/1}.
-%from_list(List) ->
-%    from_list(List, empty()).
-%
-%-spec from_list(list({key(), value()}), Acc :: tree()) -> tree().
-%from_list([], Acc) ->
-%    Acc;
-%from_list([{Key, Value}|Rest], Acc) ->
-%    from_list(Rest, enter(Key, Value, Acc)).
-%
+-spec merkle_proof(key(), any()) -> merkle_proof().
+%% @doc For a given key return a proof that, along with its value, it is contained in tree.
+%% Hash for root node is not included in the proof.
+merkle_proof(Key, {DBH, Acc}) ->
+  {{_Size, RootNode},Acc1} = DBH(get,<<"R">>,Acc),
+  merkle_proof_node(Key, RootNode, {DBH, Acc1}).
+
+%  NewLID= <<"L",Key/binary>>,
+%  NewLeafNode = {Key, Value, leaf_hash(Key, Value)},
+%  Acc1=DBH(put, {NewLID,NewLeafNode}, Acc),
+
+-spec merkle_proof_node(key(), tree_node(), any()) -> merkle_proof().
+merkle_proof_node(RKey, <<"L",K1/binary>>=Node, {DBH, Acc}) ->
+  if(RKey =/= K1) ->
+      throw('no_key');
+    true ->
+      ok
+  end,
+  {{Key, Value, _},_Acc1} = DBH(get,Node,Acc),
+  {?HASH(Key), ?HASH(Value)};
+
+merkle_proof_node(Key, <<"N",_/binary>>=Node, {DBH, Acc}) ->
+  {{InnerKey, _, Left, Right},_}=DBH(get,Node,Acc),
+  case Key < InnerKey of
+    true ->
+      {merkle_proof_node(Key, Left, {DBH, Acc}), node_hash(Right, {DBH, Acc})};
+    _ ->
+      {node_hash(Left, {DBH, Acc}), merkle_proof_node(Key, Right, {DBH, Acc})}
+  end.
+
+-spec verify_merkle_proof(key(), value(), Root::hash(), merkle_proof()) ->
+  ok | {error, Reason} when
+    Reason :: {key_hash_mismatch, hash()}
+    | {value_hash_mismatch, hash()}
+    | {root_hash_mismatch, hash()}.
+%% @doc Verify a proof against a leaf and a root node hash.
+verify_merkle_proof(Key, Value, RootHash, Proof) ->
+    {KH, VH} = {?HASH(Key), ?HASH(Value)},
+    {PKH, PVH} = bottom_merkle_proof_pair(Proof),
+    if
+        PKH =/= KH ->
+            {error, {key_hash_mismatch, PKH}};
+        PVH =/= VH ->
+            {error, {value_hash_mismatch, PKH}};
+        true ->
+            PRH = merkle_fold(Proof),
+            if
+                PRH =/= RootHash ->
+                    {error, {root_hash_mismatch, PRH}};
+                true ->
+                    ok
+            end
+    end.
+
+%-spec from_list(list({key(), value()}), fun(atom(),any(),any())) -> tree().
+%% @doc Create a tree from a list.
+%% This creates a tree by iteratively inserting elements and not necessarily results in a perfect balance, like the one obtained when running {@link from_orddict/1}.
+from_list(List, DBH) when is_function(DBH,3) ->
+    from_list(List, {DBH,#{<<"R">>=>empty()}});
+
+%-spec from_list(list({key(), value()}), {fun(atom(),any(),any()), any()}) -> any().
+from_list([], {_DBH,Acc}) ->
+    Acc;
+from_list([{Key, Value}|Rest], {DBH,Acc}) ->
+    from_list(Rest, {DBH,enter(Key, Value, {DBH,Acc})}).
+
 %-spec from_orddict(OrdDict :: list({key(), value()})) -> tree().
 %%% @equiv from_orddict(OrdDict, length(OrdDict))
 %from_orddict(OrdDict) ->
@@ -223,7 +236,7 @@ root_hash({DBH, DBAcc}) ->
 %%% @doc Create a perfectly balanced tree from an ordered dictionary.
 %from_orddict(OrdDict, Size, {DBH, Acc}) ->
 %    {Size, balance_orddict(OrdDict, Size, {DBH, Acc})}.
-%
+
 -spec to_orddict(tree()) -> list({key(), value()}).
 %% @doc Convert tree to an orddict.
 to_orddict({DBH,Acc}) ->
