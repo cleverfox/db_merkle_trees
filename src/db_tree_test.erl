@@ -16,6 +16,12 @@ testFun(Action, Arg, _Acc) ->
 
 run() ->
   Fun=fun testFun/3,
+  M0=db_merkle_trees:balance(
+           {Fun,
+            db_merkle_trees:from_list([], Fun)
+           }),
+  true=is_map(M0),
+  {0,empty}=maps:get(<<"R">>,M0),
   M=db_merkle_trees:balance(
       {Fun,
        db_merkle_trees:from_list(
@@ -24,7 +30,6 @@ run() ->
         )
       }),
   {_,Root}=maps:get(<<"R">>,M),
-  %RootNode=maps:get(Root,M),
   M1=db_merkle_trees:delete(<<"a">>,{fun db_tree_test:testFun/3, M}),
   M2=db_merkle_trees:delete(<<"b">>,{fun db_tree_test:testFun/3, M1}),
 %  {
@@ -41,7 +46,7 @@ run() ->
   MR=db_merkle_trees:root_hash({fun db_tree_test:testFun/3,M2}),
   MP=db_merkle_trees:merkle_proof(<<"i">>,{fun db_tree_test:testFun/3,M2}),
   ok=db_merkle_trees:verify_merkle_proof(<<"i">>,<<8>>,MR,MP),
-  MR=<<242,75,174,24,20,49,52,251,
+  MR= <<242,75,174,24,20,49,52,251,
        102,115,1,33,222,39,247,200,
        205,39,38,219,108,166,228,137,
        239,110,215,75,134,8,52,95>>.

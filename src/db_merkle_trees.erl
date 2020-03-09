@@ -468,8 +468,12 @@ balance_node(Node, Size, DBH) ->
 %% @doc Perfectly balance a tree.
 balance({DBH, DBAcc}) ->
   {{Size, RootNode}, _} = DBH(get,<<"R">>, DBAcc),
-  {NewRoot,Acc1}=balance_orddict(node_to_orddict(RootNode, {DBH, DBAcc}), Size, {DBH, DBAcc}),
-  DBH(put,{<<"R">>,{Size,node_id(NewRoot)}},Acc1).
+  if(Size==0) ->
+      DBAcc;
+    true ->
+      {NewRoot,Acc1}=balance_orddict(node_to_orddict(RootNode, {DBH, DBAcc}), Size, {DBH, DBAcc}),
+      DBH(put,{<<"R">>,{Size,node_id(NewRoot)}},Acc1)
+  end.
 
 
 -spec lookup(key(), db()) -> value() | none.
