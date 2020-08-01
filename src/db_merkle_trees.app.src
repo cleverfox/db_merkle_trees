@@ -2,5 +2,6 @@
  [
   {description, "Database backed merkle trees"},
   {modules, [db_merkle_trees]},
-  {vsn, "0.1"}
+  {vsn, "0.1"},
+  {applications, []}
  ]}.
