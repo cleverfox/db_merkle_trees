@@ -264,7 +264,10 @@ foldr_1(F, Acc, <<"N",_/binary>>=NodeID, {DBH, DBAcc}) ->
   {{_, _, Left, Right},_Acc1}=DBH(get,NodeID,DBAcc),
   foldr_1(F, foldr_1(F, Acc, Right, {DBH, DBAcc}), Left, {DBH, DBAcc}).
 
--spec nodeid_hash(binary(), db()) -> hash() | undefined.
+-spec nodeid_hash(binary() | 'empty', db()) -> hash() | undefined.
+nodeid_hash(empty,_) ->
+  undefined;
+
 nodeid_hash(<<"N",_/binary>>=Key,{DBH,Acc}) ->
   {{_,Hash,_,_},_Acc1}=DBH(get,Key,Acc),
   Hash;
