@@ -109,7 +109,7 @@ delete_1(Key, {InnerKey, _, LeftNodeID, RightNodeID}, {DBH, Acc0, DBArg}) ->
                        ),
           NewInnerNode= {InnerKey, IH ,
                          NewLeftNodeID, RightNodeID},
-          Acc2=DBH(put, {NewNID, NewInnerNode}, DBH(del, Key, Acc1, DBArg), DBArg),
+          Acc2=DBH(put, {NewNID, NewInnerNode}, Acc1, DBArg),
           {NewNID,Acc2}
       end;
     _ ->
